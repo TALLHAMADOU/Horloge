@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const MODES = [
   { id: 'clock', label: 'Horloge' },
@@ -37,6 +37,13 @@ const formatStopwatch = (elapsedMs) => {
 };
 
 const pickRandom = (items) => items[Math.floor(Math.random() * items.length)];
+
+const publicPath = process.env.PUBLIC_URL || '';
+
+const getSongUrl = (track) => {
+  const encodedTrack = track.split('/').map(encodeURIComponent).join('/');
+  return `${publicPath}/songs/${encodedTrack}`;
+};
 
 function useNow(intervalMs = 1000) {
   const [now, setNow] = useState(new Date());
@@ -128,12 +135,52 @@ function ClockFace({ now, use24Hour, showSeconds, progress }) {
   );
 }
 
-function TimerPanel({ tracks }) {
+function BackgroundMusic({ tracks }) {
   const audioRef = useRef(null);
+  const [isBlocked, setIsBlocked] = useState(false);
+
+  const playRandomTrack = useCallback(async () => {
+    if (!audioRef.current || tracks.length === 0) return;
+
+    audioRef.current.src = getSongUrl(pickRandom(tracks));
+    audioRef.current.volume = 0.42;
+    try {
+      await audioRef.current.play();
+      setIsBlocked(false);
+    } catch {
+      setIsBlocked(true);
+    }
+  }, [tracks]);
+
+  useEffect(() => {
+    playRandomTrack();
+  }, [playRandomTrack]);
+
+  return (
+    <>
+      <audio
+        ref={audioRef}
+        preload="auto"
+        autoPlay
+        onEnded={playRandomTrack}
+      />
+      {isBlocked && tracks.length > 0 && (
+        <button
+          type="button"
+          onClick={playRandomTrack}
+          className="fixed bottom-4 right-4 z-20 rounded-lg border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--accent-text)] shadow-panel transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+        >
+          Activer la musique
+        </button>
+      )}
+    </>
+  );
+}
+
+function TimerPanel({ hasTracks }) {
   const [duration, setDuration] = useState(900);
   const [remaining, setRemaining] = useState(900);
   const [isRunning, setIsRunning] = useState(false);
-  const [audioReady, setAudioReady] = useState(false);
 
   const progress = duration > 0 ? ((duration - remaining) / duration) * 100 : 0;
 
@@ -144,7 +191,6 @@ function TimerPanel({ tracks }) {
         if (value <= 1) {
           window.clearInterval(interval);
           setIsRunning(false);
-          audioRef.current?.pause();
           return 0;
         }
         return value - 1;
@@ -154,53 +200,28 @@ function TimerPanel({ tracks }) {
     return () => window.clearInterval(interval);
   }, [isRunning]);
 
-  const playRandomTrack = async () => {
-    if (!audioRef.current || tracks.length === 0) return;
-
-    audioRef.current.src = `/songs/${pickRandom(tracks)}`;
-    audioRef.current.volume = 0.42;
-    try {
-      await audioRef.current.play();
-      setAudioReady(true);
-    } catch {
-      setAudioReady(false);
-    }
-  };
-
-  const start = async () => {
+  const start = () => {
     if (remaining === 0) setRemaining(duration);
     setIsRunning(true);
-    await playRandomTrack();
   };
 
   const pause = () => {
     setIsRunning(false);
-    audioRef.current?.pause();
   };
 
   const reset = () => {
     setIsRunning(false);
     setRemaining(duration);
-    audioRef.current?.pause();
   };
 
   const selectPreset = (seconds) => {
     setDuration(seconds);
     setRemaining(seconds);
     setIsRunning(false);
-    audioRef.current?.pause();
   };
 
   return (
     <section className="grid gap-8 lg:grid-cols-[auto_1fr] lg:items-center">
-      <audio
-        ref={audioRef}
-        preload="none"
-        onEnded={() => {
-          if (isRunning) playRandomTrack();
-        }}
-      />
-
       <div
         className="radial-progress mx-auto grid aspect-square w-56 place-items-center rounded-full border border-[var(--line)] sm:w-64"
         style={{ '--progress': `${progress}%` }}
@@ -222,7 +243,7 @@ function TimerPanel({ tracks }) {
             Minuteur musical
           </p>
           <p className="max-w-xl text-pretty text-[var(--muted)]">
-            Lance le minuteur: une piste est choisie au hasard en arrière-plan.
+            La musique tente de démarrer automatiquement avec la page.
             Aucun titre n’est affiché.
           </p>
         </div>
@@ -256,11 +277,9 @@ function TimerPanel({ tracks }) {
         </div>
 
         <p className="min-h-5 text-sm text-[var(--muted)]" aria-live="polite">
-          {tracks.length === 0
+          {!hasTracks
             ? 'Ajoute des fichiers dans public/songs puis liste-les dans playlist.json.'
-            : audioReady
-              ? 'Lecture de fond active.'
-              : 'La musique démarre après ton clic sur Démarrer.'}
+            : 'Si le navigateur bloque le son, utilise le bouton Activer la musique.'}
         </p>
       </div>
     </section>
@@ -386,7 +405,7 @@ function App() {
   }, [showSeconds]);
 
   useEffect(() => {
-    fetch('/songs/playlist.json')
+    fetch(`${publicPath}/songs/playlist.json`)
       .then((response) => (response.ok ? response.json() : { tracks: [] }))
       .then((data) => setTracks(Array.isArray(data.tracks) ? data.tracks : []))
       .catch(() => setTracks([]));
@@ -396,6 +415,7 @@ function App() {
 
   return (
     <div className={`theme-${theme} min-h-screen bg-[var(--page)] px-4 py-6 text-[var(--text)] sm:px-6 lg:px-10`}>
+      <BackgroundMusic tracks={tracks} />
       <main className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-5xl flex-col justify-center gap-5">
         <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -430,7 +450,7 @@ function App() {
                 progress={secondProgress}
               />
             )}
-            {activeMode === 'timer' && <TimerPanel tracks={tracks} />}
+            {activeMode === 'timer' && <TimerPanel hasTracks={tracks.length > 0} />}
             {activeMode === 'stopwatch' && <StopwatchPanel />}
             {activeMode === 'zones' && <ZonesPanel now={now} />}
           </div>
