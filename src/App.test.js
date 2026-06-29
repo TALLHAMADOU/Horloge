@@ -1,21 +1,16 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import App from './App';
 
-test('renders clock with hours, minutes and seconds labels', () => {
+test('renders clock interface', () => {
   render(<App />);
-  const hoursLabel = screen.getByText(/HOURS/i);
-  const minutesLabel = screen.getByText(/MINUTES/i);
-  const secondsLabel = screen.getByText(/SECONDS/i);
-  
-  expect(hoursLabel).toBeInTheDocument();
-  expect(minutesLabel).toBeInTheDocument();
-  expect(secondsLabel).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /Horloge simple/i })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /Minuteur/i })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /Chrono/i })).toBeInTheDocument();
 });
 
-test('renders current date', () => {
+test('renders timer mode', () => {
   render(<App />);
-  const now = new Date();
-  const year = now.getFullYear().toString();
-  const yearElement = screen.getByText(new RegExp(year));
-  expect(yearElement).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /Minuteur/i }));
+  expect(screen.getByText(/Minuteur musical/i)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /Démarrer/i })).toBeInTheDocument();
 });
